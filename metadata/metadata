@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -E -e -o pipefail
+
+# Add repo specific metadata here.
+
+BASE_IMAGE_CONFIG_KEY_PREFIX="BASE_IMAGE"
+
+RELEASE_PACKAGE_NAME="Go"
+RELEASE_TAG_PACKAGE_NAME="go"
+
+UPSTREAM_PACKAGE_NAME="Go"
+UPSTREAM_VERSION_CONFIG_KEY="GO_VERSION"
+UPSTREAM_AMD64_CHECKSUM_CONFIG_KEY="GO_AMD64_SHA256_CHECKSUM"
+UPSTREAM_ARM64_CHECKSUM_CONFIG_KEY="GO_ARM64_SHA256_CHECKSUM"
+UPSTREAM_GIT_REPO="https://go.googlesource.com/go"
+GIT_REPO_TAGS_CUSTOM_FILTERING_REGEX='^((weekly|release).*|.*rc).*$'
+
+TEST_TYPE="foreground"
+TEST_CONTAINER_TYPE="go"
+TEST_CONTAINER_START_WAIT_SECONDS="10"
+
+current_upstream_version() {
+    get_config_arg ${UPSTREAM_VERSION_CONFIG_KEY:?}
+}
+
+latest_upstream_version() {
+    git_remote_repo_latest_tag "${UPSTREAM_GIT_REPO:?}" | sed -E 's/^go(.+)$/\1/'
+}
+
+update_latest_upstream_version() {
+    local cur_ver="${1:?}"
+    local latest_ver="${2:?}"
+    local amd64_sha256_checksum="$(url_sha256_checksum https://go.dev/dl/go${latest_ver:?}.linux-amd64.tar.gz)"
+    local arm64_sha256_checksum="$(url_sha256_checksum https://go.dev/dl/go${latest_ver:?}.linux-arm64.tar.gz)"
+    echo "Updating ${UPSTREAM_PACKAGE_NAME:?} ${UPSTREAM_VERSION_CONFIG_KEY:?} '${cur_ver:?}' -> '${latest_ver:?}'"
+    set_config_arg "${UPSTREAM_VERSION_CONFIG_KEY:?}" "${latest_ver:?}"
+    set_config_arg "${UPSTREAM_AMD64_CHECKSUM_CONFIG_KEY:?}" "${amd64_sha256_checksum:?}"
+    set_config_arg "${UPSTREAM_ARM64_CHECKSUM_CONFIG_KEY:?}" "${arm64_sha256_checksum:?}"
+    git add ${ARGS_FILE:?}
+}
+
+package_current_release_version() {
+    current_upstream_version
+}
+
+test_start_container() {
+    local container_name="${1:?}"
+    local expected_output="go version go$(current_upstream_version) linux/$(dpkg --print-architecture)"
+
+    set +e
+    local output=$(docker run \
+        --name ${container_name:?} \
+        --rm \
+        ${IMAGE:?} \
+        go version)
+    local return_code=$?
+    set -e
+
+    if [[ ${return_code:?} != "0" ]]; then
+        echo "Test failed: Obtained non-zero return code"
+        echo "Output: ${output:?}"
+        echo "Return Code: ${return_code:?}"
+        exit 1
+    fi
+    if [[ ${output:?} != "${expected_output:?}" ]]; then
+        echo "Test failed: Expected and actual outputs do not match"
+        echo "Expected Output: '${expected_output:?}'"
+        echo "Actual   Output: '${output:?}'"
+        exit 1
+    fi
+    echo "[TEST 1] - PASSED - go version"
+
+    docker run \
+        --name ${container_name:?} \
+        --rm \
+        ${IMAGE:?} \
+        sh -c 'go install golang.org/x/tools/gopls@latest && gopls version'
+    echo "[TEST 2] - PASSED - go install"
+}
