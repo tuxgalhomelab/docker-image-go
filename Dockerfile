@@ -13,6 +13,7 @@ ARG GO_ARM64_SHA256_CHECKSUM
 # hadolint ignore=DL4006,SC2086
 RUN \
     set -E -e -o pipefail \
+    && export HOMELAB_VERBOSE=y \
     # Install go. \
     && homelab install-go \
         ${GO_VERSION:?} \
