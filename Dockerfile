@@ -8,7 +8,7 @@ ARG GO_VERSION
 ARG GO_AMD64_SHA256_CHECKSUM
 ARG GO_ARM64_SHA256_CHECKSUM
 
-# hadolint ignore=DL4006,SC2086
+# hadolint ignore=DL4006,SC2086,SC3040
 RUN \
     set -E -e -o pipefail \
     && export HOMELAB_VERBOSE=y \
